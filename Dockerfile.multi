@@ -1,0 +1,36 @@
+# ==========================================
+# STAGE 1: The Build Environment (Heavy)
+# ==========================================
+FROM golang:1.23-bullseye AS builder
+
+WORKDIR /app
+
+# Copy dependency configs and download packages
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy application code
+COPY . .
+
+# Enforce fully static binary generation (No dynamic OS dependency linking)
+ENV CGO_ENABLED=0
+
+# Compile code with optimization flags (-s strips debug logs, -w strips tool symbols)
+RUN go build -ldflags="-s -w" -o main .
+
+# ==========================================
+# STAGE 2: The Production Runtime (Ultra-Lean)
+# ==========================================
+FROM gcr.io/distroless/static-debian12:nonroot
+
+WORKDIR /
+
+# Copy ONLY the compiled binary artifact from the first stage
+COPY --from=builder /app/main /main
+
+# Expose our app configuration port
+EXPOSE 9090
+ENV PORT=9090
+
+# Set execution targeting the standalone binary
+ENTRYPOINT ["/main"]
